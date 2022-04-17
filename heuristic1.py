@@ -10,7 +10,8 @@ def find_biggest_objects(best_assignment, objects, best_sizes):
                 norms.append((j, best_assignment[j], np.linalg.norm(aux)))
       
         norms = sorted(norms, key=lambda tup: tup[2])
-        biggest_object.append(norms[0])
+        if len(norms) > 0:  # Per casos on hi hagi una caixa de mida 0,0,0 sense cap assignació
+            biggest_object.append(norms[0])
     return biggest_object
 
   
@@ -91,7 +92,7 @@ def heuristic1():
     print("---------------------------------------------------------------")
 
     NEW_ASSIGNMENT = list(BEST_ASSIGNMENT)
-    for i in range(0, len(BEST_SIZES)):
+    for i in range(0, len(biggest_obj)):
         obj = biggest_obj[i]
         old_assig = obj[1]
         old_size = BEST_SIZES[old_assig]
