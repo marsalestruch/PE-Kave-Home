@@ -132,7 +132,7 @@ def init_objects(num_objects, dim=3, min_val=10, max_val=100, min_quant=1, max_q
     return objects, quantities
 
 
-def compute_impact(space_obj, space_box):
+def compute_impact(objects, obj_quants, obj2box, box_sizes):
     """
     Kave Home ens ha donat l'area de la bossa plana, però no ens ha dit el volum
     directament. Tocarà "inferir"-lo. Les dimensions planes de les bosses son
@@ -142,8 +142,10 @@ def compute_impact(space_obj, space_box):
     Per tant multiplicarem el resultat per un factor de 0.7, indicant com si la
     bossa ocupés un 80% del volum del cilindre que hem aproximat.
 
-    :param space_obj: espai total de totes les caixes de tots els objectes
-    :param space_box: espai total de tots els objectes (llista objects)
+    :param objects: llista de mides d'objectes (x1,x2,x3)
+    :param obj_quants: llista de quantitats de cada objecte
+    :param obj2box: mapeja cada obj_id al box_id de la caixa que se li assigna
+    :param box_sizes: llista de mides de caixes (x1,x2,x3)
     :return: nombre de bosses necessaries per omplir espai buit, cost total [€]
     """
 
@@ -160,14 +162,30 @@ def compute_impact(space_obj, space_box):
 
     L = 30  #longitud del cilindre en cm
     r = 6.5  #radi del cilindre en cm
-    volum_bossa = L * r*r*3.1416  #volum d'un cilindre = π·r²·h [cm³]
-    volum_bossa *= 0.8   #suposem que la bossa ocupa un 80% del cilindre
+    volum_bossa = L * r*r * 3.1416  #volum d'un cilindre = π·r²·h [cm³]
+    volum_bossa *= 0.8   #suposem que la bossa ocupa un X% del cilindre
 
-    empty_space = space_box - space_obj
+    num_bosses = 0
 
-    num_bosses = empty_space // volum_bossa
-    preu_bossa = preu_bobina/cm_bobina * L
-    cost_total = preu_bossa * num_bosses
+    for obj_id in range(len(objects)):
+
+        obj = objects[obj_id]
+        quant = obj_quants[obj_id]
+
+        # Calcul del espai que queda buit
+        obj_space = np.prod(obj)
+        box_id = obj2box[obj_id]
+        box_space = np.prod( box_sizes[box_id])
+        empty_space = box_space - obj_space
+
+        # No volen omplir tot l'espai buit, només fer bulto, és a dir, només un %
+        empty_space = int(empty_space * 0.6)
+
+        num_bosses += empty_space // volum_bossa
+
+    preu_bossa = (preu_bobina / cm_bobina) * 2*r
+    cost_total = num_bosses * preu_bossa
+
 
     return int(num_bosses), round(cost_total, 2)
 
@@ -176,12 +194,13 @@ def display_results(objects, obj_quants, obj2box, best_sizes):
 
     best_space = total_space_box(best_sizes, obj2box, obj_quants)
     total_obj_space = total_space_obj(objects, obj_quants)
-    num_boxes, num_objects = len(best_sizes), len(objects)
+    num_boxes, num_objects = len(best_sizes), obj_quants.sum()
+    print()
     print("####   BEST SOLUTION   ####")
     print(f"Num objects = {sum(obj_quants)}")
     print("BEST_SIZES = ", best_sizes[:5])
     print("Filled Space[%] = ", round(total_obj_space/best_space*100, 2),"%")
-    num_bosses, cost = compute_impact(total_obj_space, best_space)
+    num_bosses, cost = compute_impact(objects, obj_quants, obj2box, best_sizes)
     ratio = num_bosses/num_objects
     print(f"#Airbags= {num_bosses};  airbags/object = {ratio};  ", end="")
     print(f"total cost = {cost}€")
@@ -530,10 +549,17 @@ def ComputeSizes(_objects, _obj_quants, num_boxes, num_iter=300,
         p = np.random.random(1)[0]  #valor entre 0 i 1
         if p < prob_mutation or iters_without_improvement > iters_to_mutation:
 
+            old_space = total_space_obj(objects, obj_quants)
+
             iters_without_improvement = 0
             objects, obj_quants = create_mutation(_objects,
                                                   _obj_quants,
                                                   mutation_window)
+
+            new_space = total_space_obj(objects, obj_quants)
+            if new_space != old_space:
+                print(f"new_space - old_space = {new_space-old_space}")
+                raise Exception
 
         # Creem solució a partir de shift_probs, calculem mides de caixes i
         # assignacions (obj2box). Calculem score de la solució (espai)
@@ -570,6 +596,23 @@ def read_csv(file):
 
     return objects, quantities
 
+def create_json(file):
+    import json
+
+    df = pd.read_csv(file)
+    map = {}
+    for i in range(len(df)):
+        product_id = df.loc[i, "Num de referencia"]
+        size = df.loc[i, ["Alto", "Ancho", "Fondo"]].values
+        size.sort()
+        map[product_id] = size
+
+    y = json.dumps(map)
+    print(y)
+
+
+
+
 
 def main():
 
@@ -583,12 +626,12 @@ def main():
     np.random.seed(1234)
 
     # PARAMETRES
-    NUM_BOXES = 10
+    NUM_BOXES = 20
     NUM_ITER = 200
     # Mutacions
     PROB_MUT = 0.05   #[0,1]
     WINDOW_MUT = 10
-    ITERS_MUT = 100
+    ITERS_MUT = 150
 
 
     #OBJECTS, OBJ_QUANTS = init_objects(NUM_OBJECTS, DIM, MIN_VAL, MAX_VAL, MIN_QUANT, MAX_QUANT)
@@ -605,5 +648,15 @@ def main():
     #plot_results(OBJECTS, BEST_SIZES, BEST_OBJ2BOX)
 
 
+# TODO crear el fitxer json que mapeja object ID -> object size
+# TODO crear funció predict que retorni top N caixes, i la metrica de perdua
+# la metrica de perdua pot ser tant % espai ocupat, nombre de bosses de plastic
+# que caldrà afegir, i potser algo més.
+
 if __name__ == "__main__":
     main()
+
+
+# fer caixes entre 5 i 20 i fer grafica comparant els diferents % entre
+# la nostra approach i el baseline (per volum o per diagonal, el que funcioni
+# pitjor.
